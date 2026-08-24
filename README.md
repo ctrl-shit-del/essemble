@@ -9,7 +9,7 @@ A full-stack ticket-booking platform for movies and live events. Customers book 
 | **Live app** | [https://essemble-murex.vercel.app/](https://essemble-murex.vercel.app/) |
 | **API** | [https://essemble-api.onrender.com/](https://essemble-api.onrender.com/) |
 | **API docs** | [https://essemble-api.onrender.com/docs](https://essemble-api.onrender.com/docs) |
-| **Design write-up** | [docs/SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md) |
+| **Design write-up** | [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md) |
 
 > The API is hosted on Render's free tier and sleeps after 15 minutes of inactivity. **The first request can take up to 60 seconds** while the instance wakes; the frontend shows a "waking the server" state during this. Subsequent requests are immediate.
 
@@ -205,6 +205,48 @@ The offer token is 32 random bytes; only its SHA-256 hash is stored. Claiming is
 Full detail in [`docs/SYSTEM_DESIGN.md`](docs/SYSTEM_DESIGN.md).
 
 ---
+
+---
+
+## Email delivery
+
+Emails are queued to an `outbox` table inside the booking transaction and
+delivered by a background worker with retry and exponential backoff — a mail
+provider failure can never roll back or delay a confirmed booking.
+
+Three templates: booking confirmation (with QR), waitlist offer (tokenised
+claim link and countdown), and cancellation.
+
+![Booking confirmation email](docs/images/booking-email.png)
+
+Real delivery is verified end to end against Resend on the deployed instance.
+The QR encodes `{APP_BASE_URL}/checkin/{reference}.{signature}` so a phone
+camera opens the check-in page directly rather than reading inert text.
+
+`MAIL_DRIVER=console` is the default and renders emails to stdout, so the app
+runs fully with no mail credentials. With `MAIL_DRIVER=resend` and Resend's
+shared sender (`onboarding@resend.dev`), delivery is restricted to the Resend
+account owner's address until a domain is verified — seeded demo accounts
+therefore render to the log rather than sending.
+
+## AI booking assistant
+
+Natural-language search and seat ranking, backed by four read-only tools:
+`find_shows`, `get_show_availability`, `rank_seats`, `get_user_context`.
+
+The model has **no write access** to booking state — no hold, confirm, cancel,
+or claim tool exists. It resolves intent into structured filters, calls the
+same availability logic the seat map uses, and returns ranked options with the
+score components behind them. Tapping an option enters the normal booking flow
+with seats pre-selected but not held; the customer still presses hold.
+
+Availability is enforced in SQL shared by every tool, so a held or booked seat
+cannot appear in a suggestion regardless of what the model says. Show and seat
+ids in a reply are checked against a ledger of ids that actually came back from
+a tool call.
+
+Runs on Groq (`openai/gpt-oss-120b`), configured via `GROQ_API_KEY`. With no key
+set, assistant routes return 503 and the rest of the app is unaffected.
 
 ## Concurrency proof
 

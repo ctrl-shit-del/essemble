@@ -1,3 +1,4 @@
+import { AssistantLauncher } from "@/components/assistant/AssistantLauncher";
 import { CustomerNav } from "@/components/shell/CustomerNav";
 
 /**
@@ -17,6 +18,9 @@ export default function CustomerLayout({
     <div className="min-h-dvh bg-bg">
       <CustomerNav />
       <main className="mx-auto max-w-7xl px-6 py-10 lg:py-14">{children}</main>
+      {/* Customer shell only -- an organiser has no booking to make, so the
+          control does not exist for them rather than existing and refusing. */}
+      <AssistantLauncher />
     </div>
   );
 }

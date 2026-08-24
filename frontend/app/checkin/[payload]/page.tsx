@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Brand } from "@/components/shell/Brand";
 import { Button } from "@/components/ui/Button";
@@ -43,10 +43,22 @@ export default function CheckinPage({
   const [outcome, setOutcome] = useState<CheckinOutcome | null>(null);
   const [checking, setChecking] = useState(false);
 
+  /**
+   * "Have we already fired?" as a ref, NOT as effect state.
+   *
+   * Guarding on `checking` looked equivalent and was not: `checking` would be
+   * in the dependency array, so setting it re-ran the effect, whose cleanup
+   * set cancelled = true and threw away the in-flight response. The page sat
+   * on "Checking" forever while the request had actually succeeded. A ref
+   * does not participate in the dependency array, so the effect runs exactly
+   * once per payload.
+   */
+  const started = useRef(false);
   const isAdmin = user?.role === "admin";
 
   useEffect(() => {
-    if (authLoading || !isAdmin || outcome || checking) return;
+    if (authLoading || !isAdmin || started.current) return;
+    started.current = true;
 
     let cancelled = false;
     setChecking(true);
@@ -67,7 +79,7 @@ export default function CheckinPage({
     return () => {
       cancelled = true;
     };
-  }, [authLoading, isAdmin, outcome, checking, decoded]);
+  }, [authLoading, isAdmin, decoded]);
 
   const reference = referenceFromPayload(decoded);
 

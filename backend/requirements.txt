@@ -19,6 +19,11 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 
+# --- assistant ---
+# Groq is OpenAI-compatible, so the OpenAI SDK pointed at Groq's base URL is
+# the whole client. No vendor-specific package.
+openai==3.3.1
+
 # --- notifications ---
 resend==2.5.1
 qrcode[pil]==8.0

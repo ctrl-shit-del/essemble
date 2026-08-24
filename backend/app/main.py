@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import text
 
+from app.assistant.router import router as assistant_router
 from app.booking.checkin_router import router as checkin_router
 from app.booking.router import router as booking_router
 from app.booking.stream_router import router as stream_router
@@ -90,6 +91,7 @@ for _router in (
     bookings_router,
     checkin_router,
     stream_router,
+    assistant_router,
 ):
     app.include_router(_router)
 

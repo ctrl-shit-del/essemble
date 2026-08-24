@@ -33,6 +33,26 @@ import { cn } from "@/lib/cn";
 const SCAN_REGION_ID = "essemble-scan-region";
 const DUPLICATE_WINDOW_MS = 3000;
 
+/**
+ * How long to wait for the camera before giving up on it.
+ *
+ * getCameras() blocks on the browser's permission prompt, and if that prompt
+ * is never answered -- dismissed, suppressed by policy, or on a device with
+ * no camera at all -- the promise simply never settles. Without a deadline
+ * the page sits on "Starting the camera" indefinitely and the manual
+ * fallback, the whole reason a door still works on a laptop, is never shown.
+ */
+const CAMERA_TIMEOUT_MS = 8000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error("camera-timeout")), ms),
+    ),
+  ]);
+}
+
 type CameraState = "starting" | "scanning" | "paused" | "denied" | "unavailable";
 
 export default function ScannerPage() {
@@ -80,7 +100,7 @@ export default function ScannerPage() {
   const start = useCallback(async () => {
     setCamera("starting");
     try {
-      const cameras = await Html5Qrcode.getCameras();
+      const cameras = await withTimeout(Html5Qrcode.getCameras(), CAMERA_TIMEOUT_MS);
       if (!cameras || cameras.length === 0) {
         setCamera("unavailable");
         return;
@@ -89,7 +109,8 @@ export default function ScannerPage() {
       const scanner = scannerRef.current ?? new Html5Qrcode(SCAN_REGION_ID);
       scannerRef.current = scanner;
 
-      await scanner.start(
+      await withTimeout(
+        scanner.start(
         // Rear camera where there is one; a phone at a door is held facing
         // the ticket, not the operator.
         { facingMode: "environment" },
@@ -113,10 +134,14 @@ export default function ScannerPage() {
         () => {
           // Fires constantly for every frame without a code. Not an error.
         },
+        ),
+        CAMERA_TIMEOUT_MS,
       );
       setCamera("scanning");
     } catch (error) {
       const message = String(error);
+      // A refused prompt and an unanswered one both mean "use the keyboard",
+      // but only the refused one is worth offering a retry for.
       setCamera(
         /permission|denied|NotAllowed/i.test(message) ? "denied" : "unavailable",
       );

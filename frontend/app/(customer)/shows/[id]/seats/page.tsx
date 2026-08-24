@@ -1,6 +1,7 @@
 "use client";
 
-import { use } from "react";
+import { Suspense, use } from "react";
+import { useSearchParams } from "next/navigation";
 import { SeatMapView } from "@/components/seatmap/SeatMapView";
 import { EmptyState } from "@/components/ui/EmptyState";
 
@@ -34,5 +35,32 @@ export default function SeatSelectionPage({
     );
   }
 
-  return <SeatMapView showId={showId} />;
+  return (
+    <Suspense fallback={null}>
+      <SeatMapWithPreselection showId={showId} />
+    </Suspense>
+  );
+}
+
+/**
+ * `?seats=12,13` pre-SELECTS those seats. It does not hold them.
+ *
+ * This is how the assistant hands off: it ranked some seats, the customer
+ * tapped one of its cards, and they arrive here with that group already
+ * highlighted and the Hold button still waiting to be pressed. Selection is
+ * client state and always has been -- arriving with one changes nothing
+ * about what the server knows.
+ */
+function SeatMapWithPreselection({ showId }: { showId: number }) {
+  const searchParams = useSearchParams();
+  const raw = searchParams.get("seats");
+
+  const preselected = raw
+    ? raw
+        .split(",")
+        .map((value) => Number(value.trim()))
+        .filter((value) => Number.isInteger(value) && value > 0)
+    : [];
+
+  return <SeatMapView showId={showId} preselectedSeatIds={preselected} />;
 }

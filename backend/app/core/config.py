@@ -169,6 +169,34 @@ class Settings(BaseSettings):
     realtime_enabled: bool = True
     outbox_enabled: bool = True
 
+    # --- assistant ----------------------------------------------------------
+    #: Groq API key for the booking assistant.
+    #:
+    #: OPTIONAL by design. Absent, the assistant routes answer 503 and every
+    #: other route behaves exactly as before -- the assistant is a feature of
+    #: the product, not a dependency of it, and a missing key must never be
+    #: the reason the booking engine will not boot.
+    groq_api_key: str | None = None
+    #: Groq speaks the OpenAI wire protocol, so the integration is the OpenAI
+    #: SDK pointed here rather than a vendor-specific client. Kept in
+    #: configuration so moving to another compatible provider is a variable.
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    #: Named explicitly rather than defaulted in code, so the model in use is
+    #: visible in configuration rather than buried in a call site.
+    #:
+    #: NOT llama-3.3-70b-versatile: Groq has stopped serving it, and a default
+    #: that answers 404 means an unset GROQ_MODEL is a dead assistant rather
+    #: than a working one. Any tool-capable model on GET /openai/v1/models
+    #: will do; this one is the strongest currently listed.
+    groq_model: str = "openai/gpt-oss-120b"
+    #: Tool-use iterations before the loop gives up and answers with what it
+    #: has. A runaway loop costs money and makes the user wait.
+    assistant_max_iterations: int = 5
+    #: Messages per user per hour.
+    assistant_rate_limit_per_hour: int = 20
+    #: Conversation turns kept before the oldest are dropped.
+    assistant_max_history_turns: int = 10
+
     # --- mail ---------------------------------------------------------------
     #: 'console' prints the rendered email, so the app runs with no
     #: credentials at all. 'resend' delivers for real.

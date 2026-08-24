@@ -72,6 +72,7 @@ DOMAIN_TAGS = {
     "booking",
     "waitlist",
     "checkin",
+    "assistant",
     "system",
 }
 AUDIENCE_TAGS = {"admin", "organiser"}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SeatMapCanvas } from "./SeatMapCanvas";
 import { SeatMapSkeleton } from "./SeatMapSkeleton";
@@ -17,7 +17,14 @@ import { describeError } from "@/lib/errors";
 import { MAX_SEATS_PER_HOLD, createHold, seatLabel } from "@/lib/seatmap";
 import type { SeatMapSeat } from "@/lib/types";
 
-export function SeatMapView({ showId }: { showId: number }) {
+export function SeatMapView({
+  showId,
+  preselectedSeatIds = [],
+}: {
+  showId: number;
+  /** From the assistant hand-off. A selection, never a hold. */
+  preselectedSeatIds?: number[];
+}) {
   const live = useLiveSeatMap(showId);
   const toast = useToast();
   const router = useRouter();
@@ -33,6 +40,36 @@ export function SeatMapView({ showId }: { showId: number }) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [focusedSeatId, setFocusedSeatId] = useState<number | null>(null);
   const [holding, setHolding] = useState(false);
+
+  /**
+   * Apply a hand-off selection once, after the map loads.
+   *
+   * Only seats that are ACTUALLY available get selected: the assistant ranked
+   * them a moment ago and someone may have taken one since, so anything now
+   * held or booked is silently dropped rather than shown as chosen.
+   */
+  const appliedPreselection = useRef(false);
+  useEffect(() => {
+    if (appliedPreselection.current) return;
+    if (!live.map || preselectedSeatIds.length === 0) return;
+    appliedPreselection.current = true;
+
+    const available = new Set(
+      live.map.seats
+        .filter((seat) => seat.status === "available")
+        .map((seat) => seat.seat_id),
+    );
+    const usable = preselectedSeatIds.filter((id) => available.has(id));
+    if (usable.length > 0) setSelected(new Set(usable));
+
+    if (usable.length < preselectedSeatIds.length) {
+      toast.show({
+        title: "Some of those seats have gone",
+        description:
+          "They were taken while you were choosing. The rest are selected.",
+      });
+    }
+  }, [live.map, preselectedSeatIds, toast]);
 
   const map = live.map;
 

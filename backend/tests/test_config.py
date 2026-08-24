@@ -10,6 +10,7 @@ import re
 
 import pytest
 from dotenv import dotenv_values
+from pydantic import ValidationError
 
 from app.core.config import Settings
 from app.main import app
@@ -353,3 +354,85 @@ def test_the_test_database_is_a_direct_endpoint():
         f"the test database is a pooled endpoint ({settings.db_host}); "
         "the SSE tests need LISTEN/NOTIFY"
     )
+
+
+# ------------------------------------------------------- required secrets
+
+#: Both signing keys, with what an attacker gains if either is guessable.
+SECRETS = ["jwt_secret", "qr_secret"]
+
+#: Every way a secret can fail to be one.
+BAD_VALUES = [
+    pytest.param(None, id="unset"),
+    pytest.param("", id="empty"),
+    pytest.param("   ", id="whitespace"),
+    pytest.param("change-me-in-production", id="placeholder"),
+    pytest.param("CHANGE-ME-IN-PRODUCTION", id="placeholder-uppercase"),
+    pytest.param("changeme", id="placeholder-variant"),
+    pytest.param("short", id="too-short"),
+]
+
+REAL = "K7q2wZ0pL9vX4nT8mB3sR6yH1jF5dC0a"
+
+
+@pytest.mark.parametrize("field", SECRETS)
+@pytest.mark.parametrize("value", BAD_VALUES)
+def test_settings_refuses_to_exist_without_a_real_secret(field, value):
+    """A default signing key is a key everyone with the repo already has.
+
+    Unconditional, not scoped to ENVIRONMENT: scoping it would mean this path
+    never runs locally or in CI, so its first execution would be the
+    deployment it exists to protect.
+    """
+    kwargs = {name: REAL for name in SECRETS}
+    kwargs[field] = value
+
+    with pytest.raises(ValidationError) as caught:
+        Settings(**kwargs)
+
+    message = str(caught.value)
+    assert field.upper() in message, "the error must name the variable"
+    assert "secrets.token_urlsafe" in message, (
+        "the error must say how to generate one"
+    )
+
+
+@pytest.mark.parametrize("field", SECRETS)
+def test_a_real_secret_is_accepted(field):
+    """The guard must not reject legitimate values."""
+    kwargs = {name: REAL for name in SECRETS}
+    assert getattr(Settings(**kwargs), field) == REAL
+
+
+def test_the_placeholder_is_refused_even_in_a_local_environment():
+    """The rule is unconditional. ENVIRONMENT does not soften it."""
+    for environment in ("local", "staging", "production"):
+        with pytest.raises(ValidationError):
+            Settings(
+                environment=environment,
+                jwt_secret="change-me-in-production",
+                qr_secret=REAL,
+            )
+
+
+def test_neither_secret_has_a_usable_default():
+    """Nothing to fall back to: the field defaults are absence, not a value."""
+    for field in SECRETS:
+        default = Settings.model_fields[field].default
+        assert default is None, f"{field} still has a default: {default!r}"
+
+
+def test_env_example_ships_no_real_secret_value():
+    """The example file must not carry something that would silently work."""
+    for line in ENV_EXAMPLE.read_text().splitlines():
+        for field in SECRETS:
+            prefix = f"{field.upper()}="
+            if line.startswith(prefix):
+                assert line[len(prefix):].strip() == "", (
+                    f"{prefix} in .env.example must be blank, not a value "
+                    "someone could deploy with"
+                )
+
+
+def test_env_example_documents_how_to_generate_a_secret():
+    assert "secrets.token_urlsafe" in ENV_EXAMPLE.read_text()

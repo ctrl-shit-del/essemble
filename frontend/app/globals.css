@@ -1,0 +1,242 @@
+@import "tailwindcss";
+
+/* ===========================================================================
+   ESSEMBLE design tokens.
+
+   Declared in Tailwind v4's @theme, which does both jobs at once: it emits
+   real CSS custom properties on :root AND generates the matching utilities
+   (bg-bg, text-muted, border-border, ...). One definition, no drift between
+   a Tailwind config and a separate variables file.
+
+   Dark only. There is no light palette and no prefers-color-scheme block --
+   the product is a cinema interface and a light mode would be a different
+   design, not a recolour of this one.
+   =========================================================================== */
+
+@theme {
+  /* --- surfaces ---------------------------------------------------------- */
+  --color-bg: #0d0d0f; /* deep obsidian */
+  --color-surface: #17171a;
+  --color-surface-2: #202024; /* elevated */
+
+  /* --- type -------------------------------------------------------------- */
+  --color-text: #f5f3ee; /* ivory */
+  --color-muted: #a6a39b;
+
+  /* --- accent ------------------------------------------------------------
+     Warm amber. Reserved for: primary CTA, active nav, selected seat, key
+     metrics, focus rings, AI accents. If a screen reads as amber, something
+     is using it that should not be. */
+  --color-accent: #f2b84b;
+  --color-accent-hover: #f7c766;
+  --color-accent-press: #d9a33f;
+  /* Amber at low alpha, for tints and rings. */
+  --color-accent-soft: rgba(242, 184, 75, 0.14);
+  --color-accent-ring: rgba(242, 184, 75, 0.45);
+
+  --color-border: rgba(245, 243, 238, 0.08);
+  --color-border-strong: rgba(245, 243, 238, 0.16);
+
+  /* --- semantic ---------------------------------------------------------- */
+  --color-danger: #e5674f;
+  --color-danger-soft: rgba(229, 103, 79, 0.14);
+  --color-success: #6fbf8b;
+  --color-success-soft: rgba(111, 191, 139, 0.14);
+
+  /* --- seat states -------------------------------------------------------
+     These differ in HUE, not shade, because they mean opposite things and
+     will be read at distance off a projector. `held` is deliberately a
+     desaturated neutral rather than a dimmer amber: a darker amber next to
+     selected amber is the one confusion that must not be possible. */
+  --color-seat-held: #6e6a61;
+  --color-seat-booked: #2a2a2e;
+
+  /* --- typography --------------------------------------------------------
+     Wired to the next/font variables set in app/layout.tsx. */
+  --font-sans: var(--font-manrope), ui-sans-serif, sans-serif;
+  --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
+
+  /* --- motion ------------------------------------------------------------ */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ===========================================================================
+   Base
+   =========================================================================== */
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html,
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Amber focus ring everywhere, and only where a keyboard user needs it. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-bg);
+}
+
+/* A scrollbar that does not punch a light hole in a dark interface. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-surface-2) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-surface-2);
+  border-radius: 999px;
+  border: 2px solid var(--color-bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ===========================================================================
+   Utilities
+   =========================================================================== */
+
+/* Glass. Navbar, search overlay, modals, sticky booking bar, AI panel ONLY.
+   Deliberately not available to cards: glass over a scrolling grid turns
+   into visual noise and costs a compositor layer per card. */
+@utility glass {
+  background: rgba(20, 20, 22, 0.65);
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+  border: 1px solid var(--color-border);
+}
+
+/* The held-seat hatch, as CSS. The SVG pattern in components/ui/SeatPattern
+   is the canonical one for the seat map itself; this is for legends, badges
+   and anywhere a plain element needs the same texture. */
+@utility hatch-held {
+  background-color: var(--color-seat-held);
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(13, 13, 15, 0.55) 0,
+    rgba(13, 13, 15, 0.55) 1.5px,
+    transparent 1.5px,
+    transparent 4.5px
+  );
+}
+
+/* Hairline that survives a dark background without looking like a border. */
+@utility hairline-t {
+  border-top: 1px solid var(--color-border);
+}
+
+@utility text-balance-title {
+  text-wrap: balance;
+}
+
+/* ===========================================================================
+   Keyframes
+   =========================================================================== */
+
+@keyframes essemble-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes essemble-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes essemble-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes essemble-pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Seat transition feedback.
+   A remote status change must be VISIBLE -- a seat silently flipping to grey
+   is invisible to someone watching two windows side by side, and that
+   side-by-side demonstration is the only direct proof the real-time layer
+   works. The ring expands and fades rather than the seat pulsing, so the
+   seat's own colour stays readable throughout the animation. */
+
+@keyframes essemble-seat-change {
+  0% {
+    opacity: 0;
+    transform: scale(0.75);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1.18);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
+/* Losing a seat to someone else gets a sharper, doubled pulse: it is a
+   different event from "the map moved" and should not read the same. */
+@keyframes essemble-seat-lost {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  15%,
+  55% {
+    opacity: 1;
+    transform: scale(1.25);
+  }
+  35% {
+    opacity: 0.45;
+    transform: scale(1.1);
+  }
+}

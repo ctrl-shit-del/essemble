@@ -10,7 +10,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from typing import Annotated
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 #: libpq spellings of sslmode and the asyncpg `ssl` value they map onto.
@@ -28,6 +28,59 @@ _SSLMODE_TO_ASYNCPG = {
 #: Neon puts "-pooler" in the host; Supabase uses port 6543.
 _POOLED_HOST_MARKERS = ("-pooler",)
 _POOLED_PORTS = (6543,)
+
+#: Values that are not secrets. The first is the placeholder this project
+#: shipped with; the rest are what a hurried deployment reaches for. Compared
+#: case-insensitively after stripping whitespace.
+_PLACEHOLDER_SECRETS = frozenset(
+    {
+        "change-me-in-production",
+        "changeme",
+        "change-me",
+        "secret",
+        "password",
+        "test",
+        "dev",
+        "development",
+        "production",
+        "todo",
+        "xxx",
+        "none",
+        "null",
+    }
+)
+
+#: Short enough to brute-force offline. Both secrets are HMAC/HS256 keys, so
+#: their whole value is that guessing them is infeasible.
+_MIN_SECRET_LENGTH = 16
+
+_MISSING_SECRET_ERROR = (
+    "{name} is {problem}.\n"
+    "\n"
+    "This is refused rather than defaulted. {name} is a signing key: with a\n"
+    "known value, {consequence}\n"
+    "A default committed to the repository is a key that everyone who can\n"
+    "read the repository already has, so there is no safe fallback to pick.\n"
+    "\n"
+    "Generate one and set it in the environment:\n"
+    '  python -c "import secrets; print(secrets.token_urlsafe(48))"\n'
+    "\n"
+    "Use a DIFFERENT value in each deployment, and never reuse the local one\n"
+    "in production."
+)
+
+#: What an attacker gets for free if each secret is known.
+_SECRET_CONSEQUENCE = {
+    "JWT_SECRET": (
+        "anyone can mint an access token for any user id and any\n"
+        "role, including admin -- authentication stops meaning anything."
+    ),
+    "QR_SECRET": (
+        "anyone can forge a check-in QR code for any booking\n"
+        "reference, which is the whole of what stops a printed screenshot\n"
+        "being a valid ticket (I8)."
+    ),
+}
 
 _POOLED_DSN_ERROR = (
     "DATABASE_URL points at a transaction-mode connection pooler ({reason}).\n"
@@ -77,9 +130,13 @@ class Settings(BaseSettings):
     db_max_overflow: int = 10
 
     # --- auth ---------------------------------------------------------------
-    jwt_secret: str = Field(
-        default="change-me-in-production",
-        description="HS256 signing key for access tokens.",
+    #: HS256 signing key for access tokens. NO DEFAULT, deliberately: a
+    #: fallback value here is a signing key published in the repository, and
+    #: anyone holding it can mint a token for any user id and any role.
+    #: Absence is checked below and refused.
+    jwt_secret: str | None = Field(
+        default=None,
+        description="HS256 signing key for access tokens. Required.",
     )
     jwt_algorithm: str = "HS256"
     jwt_expiry_hours: int = 24
@@ -94,8 +151,12 @@ class Settings(BaseSettings):
     #: A booking can no longer be cancelled this close to the show.
     cancellation_cutoff_minutes: int = 60
     #: HMAC key for QR payloads. A raw booking reference must never be enough
-    #: to check in, so this is a real secret in production.
-    qr_secret: str = Field(default="change-me-in-production")
+    #: to check in (I8), which is only true while this is secret. NO DEFAULT,
+    #: for the same reason as jwt_secret: a published key means anyone can
+    #: forge a ticket for any reference. Absence is checked below and refused.
+    qr_secret: str | None = Field(
+        default=None, description="HMAC key for QR payloads. Required."
+    )
 
     # --- workers ------------------------------------------------------------
     sweeper_interval_seconds: int = 10
@@ -195,6 +256,46 @@ class Settings(BaseSettings):
         return urlunsplit(
             (scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
         )
+
+    @model_validator(mode="after")
+    def _require_real_secrets(self) -> "Settings":
+        """Refuse to exist without real signing keys.
+
+        Deliberately UNCONDITIONAL -- not scoped to ENVIRONMENT. Scoping it
+        would mean local development and CI never execute this path, so the
+        first time it ran would be the deployment it was written to protect,
+        which is the one place a surprise is unaffordable. A default signing
+        key has no legitimate use anywhere, local included.
+
+        Raising here means the process cannot start: `settings` is built at
+        import time, so a misconfigured deployment fails loudly at boot
+        rather than serving forgeable tokens.
+        """
+        for name, value in (
+            ("JWT_SECRET", self.jwt_secret),
+            ("QR_SECRET", self.qr_secret),
+        ):
+            cleaned = (value or "").strip()
+            if not cleaned:
+                problem = "not set" if value is None else "empty"
+            elif cleaned.lower() in _PLACEHOLDER_SECRETS:
+                problem = f"still the placeholder value {cleaned!r}"
+            elif len(cleaned) < _MIN_SECRET_LENGTH:
+                problem = (
+                    f"only {len(cleaned)} characters long "
+                    f"(minimum {_MIN_SECRET_LENGTH})"
+                )
+            else:
+                continue
+
+            raise ValueError(
+                _MISSING_SECRET_ERROR.format(
+                    name=name,
+                    problem=problem,
+                    consequence=_SECRET_CONSEQUENCE[name],
+                )
+            )
+        return self
 
     @property
     def db_host(self) -> str:

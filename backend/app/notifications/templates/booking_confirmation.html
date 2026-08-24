@@ -1,0 +1,29 @@
+{% extends "_base.html" %}
+{% block body %}
+<p style="margin:0 0 16px;">Hello {{ name }}, your booking is confirmed.</p>
+
+<table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px;">
+  <tr><td style="padding:6px 0;color:#6a6a6a;">Event</td>
+      <td style="padding:6px 0;text-align:right;font-weight:600;">{{ event_title }}</td></tr>
+  <tr><td style="padding:6px 0;color:#6a6a6a;">Venue</td>
+      <td style="padding:6px 0;text-align:right;">{{ venue_name }} &middot; {{ screen_name }}</td></tr>
+  <tr><td style="padding:6px 0;color:#6a6a6a;">When</td>
+      <td style="padding:6px 0;text-align:right;">{{ starts_at }}</td></tr>
+  <tr><td style="padding:6px 0;color:#6a6a6a;">Seats</td>
+      <td style="padding:6px 0;text-align:right;">
+        {% for seat in seats %}{{ seat.label }}{% if not loop.last %}, {% endif %}{% endfor %}
+      </td></tr>
+  <tr><td style="padding:6px 0;color:#6a6a6a;">Reference</td>
+      <td style="padding:6px 0;text-align:right;font-family:monospace;">{{ reference }}</td></tr>
+  <tr><td style="padding:10px 0;border-top:1px solid #ececec;font-weight:600;">Total</td>
+      <td style="padding:10px 0;border-top:1px solid #ececec;text-align:right;font-weight:600;">
+        &#8377;{{ total }}</td></tr>
+</table>
+
+<div style="text-align:center;padding:20px;background:#fafafa;border-radius:8px;">
+  <img src="cid:{{ qr_cid }}" alt="Entry QR code" width="200" height="200"
+       style="display:block;margin:0 auto 10px;"/>
+  <div style="font-size:11px;color:#8a8a8a;font-family:monospace;">{{ qr_payload }}</div>
+  <div style="font-size:12px;color:#6a6a6a;margin-top:6px;">Show this at the door.</div>
+</div>
+{% endblock %}

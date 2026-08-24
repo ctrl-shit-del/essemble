@@ -1,0 +1,38 @@
+{% extends "_base.html" %}
+{% block body %}
+<p style="margin:0 0 16px;">
+  Hello {{ name }}, seats have opened up for {{ event_title }} and they are
+  held for you.
+</p>
+
+<table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:16px;">
+  <tr><td style="padding:6px 0;color:#6a6a6a;">Venue</td>
+      <td style="padding:6px 0;text-align:right;">{{ venue_name }}</td></tr>
+  <tr><td style="padding:6px 0;color:#6a6a6a;">When</td>
+      <td style="padding:6px 0;text-align:right;">{{ starts_at }}</td></tr>
+  <tr><td style="padding:6px 0;color:#6a6a6a;">Category</td>
+      <td style="padding:6px 0;text-align:right;">{{ category }}</td></tr>
+  <tr><td style="padding:6px 0;color:#6a6a6a;">Seats</td>
+      <td style="padding:6px 0;text-align:right;">
+        {% for seat in seats %}{{ seat }}{% if not loop.last %}, {% endif %}{% endfor %}
+      </td></tr>
+  <tr><td style="padding:10px 0;border-top:1px solid #ececec;font-weight:600;">Total</td>
+      <td style="padding:10px 0;border-top:1px solid #ececec;text-align:right;font-weight:600;">
+        &#8377;{{ total }}</td></tr>
+</table>
+
+<div style="padding:14px;background:#fff8e6;border:1px solid #f0d999;border-radius:8px;
+            font-size:14px;margin-bottom:20px;">
+  This offer expires at <strong>{{ expires_at }}</strong>. After that the seats
+  go to the next person waiting.
+</div>
+
+<a href="{{ claim_url }}"
+   style="display:block;text-align:center;background:#1a1a1a;color:#ffffff;
+          padding:13px;border-radius:8px;text-decoration:none;font-weight:600;">
+  Claim these seats
+</a>
+<p style="font-size:11px;color:#8a8a8a;margin-top:12px;word-break:break-all;">
+  {{ claim_url }}
+</p>
+{% endblock %}

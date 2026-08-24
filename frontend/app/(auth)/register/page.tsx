@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { HOME_FOR_ROLE, useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -21,8 +21,27 @@ const ROLES: { value: SelfServiceRole; label: string; blurb: string }[] = [
 ];
 
 export default function RegisterPage() {
+  // useSearchParams needs a boundary to keep this route static.
+  return (
+    <Suspense fallback={null}>
+      <RegisterForm />
+    </Suspense>
+  );
+}
+
+function RegisterForm() {
   const { register } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next");
+
+  /**
+   * Only a same-origin path. An absolute URL here would be an open redirect:
+   * anyone could mail a /register?next=https://... link and have the app
+   * bounce a freshly-signed-in user off site.
+   */
+  const safeNext =
+    next && next.startsWith("/") && !next.startsWith("//") ? next : null;
 
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [role, setRole] = useState<SelfServiceRole>("customer");
@@ -48,7 +67,7 @@ export default function RegisterPage() {
         password: form.password,
         role,
       });
-      router.replace(HOME_FOR_ROLE[user.role]);
+      router.replace(safeNext ?? HOME_FOR_ROLE[user.role]);
     } catch (caught) {
       if (isApiError(caught)) {
         const fields = caught.fieldErrors;
@@ -169,7 +188,7 @@ export default function RegisterPage() {
       <p className="mt-6 text-center text-[13px] text-muted">
         Already have one?{" "}
         <Link
-          href="/login"
+          href={safeNext ? `/login?next=${encodeURIComponent(safeNext)}` : "/login"}
           className="text-text underline decoration-border underline-offset-4 transition-colors hover:decoration-accent"
         >
           Sign in

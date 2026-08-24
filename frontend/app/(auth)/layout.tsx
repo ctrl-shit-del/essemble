@@ -1,8 +1,15 @@
+import Link from "next/link";
 import { Brand } from "@/components/shell/Brand";
 
 /**
- * Auth shell. No nav, no shell chrome -- there is exactly one thing to do on
- * these pages and the surrounding furniture would only offer ways to leave.
+ * Auth shell.
+ *
+ * No nav, because there is one thing to do on these pages. But "no nav" was
+ * being read as "no exit": the wordmark was already a link to "/" and nothing
+ * about it said so, which is the same as not being one. So it now carries a
+ * visible hover affordance, and there is an explicit way back above it --
+ * someone who clicked Sign in to browse should not have to use the browser
+ * button to change their mind.
  */
 export default function AuthLayout({
   children,
@@ -23,9 +30,27 @@ export default function AuthLayout({
       />
 
       <div className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-6 py-12">
+        <Link
+          href="/"
+          className="mb-5 inline-flex w-fit items-center gap-1.5 text-[13px] text-muted transition-colors hover:text-text"
+        >
+          <svg viewBox="0 0 12 12" className="h-3 w-3" aria-hidden="true">
+            <path
+              d="M7.5 2.5 4 6l3.5 3.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          Back to what&rsquo;s on
+        </Link>
+
         <div className="mb-8">
-          <Brand />
+          <Brand className="underline decoration-transparent underline-offset-[6px] transition-[text-decoration-color] hover:decoration-accent" />
         </div>
+
         {children}
       </div>
     </div>

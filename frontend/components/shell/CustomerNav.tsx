@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Brand } from "./Brand";
-import { useAuth } from "@/components/auth/AuthProvider";
+import { NotificationsMenu } from "./NotificationsMenu";
+import { ProfileMenu } from "./ProfileMenu";
 import { cn } from "@/lib/cn";
 
 const LINKS = [
@@ -29,7 +30,6 @@ const LINKS = [
  */
 export function CustomerNav() {
   const pathname = usePathname();
-  const { user, logout } = useAuth();
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -166,98 +166,12 @@ export function CustomerNav() {
               Chennai
             </button>
 
-            <button
-              type="button"
-              aria-label="Notifications"
-              tabIndex={searchOpen ? -1 : undefined}
-              className="relative grid h-10 w-10 place-items-center rounded-full text-muted transition-colors hover:text-text"
-            >
-              <BellIcon />
-              <span
-                aria-hidden="true"
-                className="absolute right-2.5 top-2.5 h-1.5 w-1.5 rounded-full bg-accent"
-              />
-            </button>
-
-            {user ? (
-              <ProfileMenu name={user.name} onLogout={logout} />
-            ) : (
-              <Link
-                href="/login"
-                tabIndex={searchOpen ? -1 : undefined}
-                className="whitespace-nowrap rounded-lg px-3 py-2 text-sm text-text transition-colors hover:bg-surface-2"
-              >
-                Sign in
-              </Link>
-            )}
+            <NotificationsMenu />
+            <ProfileMenu />
           </div>
         </div>
       </div>
     </header>
-  );
-}
-
-function ProfileMenu({ name, onLogout }: { name: string; onLogout: () => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (!ref.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open]);
-
-  const initials = name
-    .split(" ")
-    .map((part) => part[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className="grid h-9 w-9 place-items-center rounded-full border border-border bg-surface-2 text-[12px] font-semibold text-text transition-colors hover:border-border-strong"
-      >
-        {initials || "?"}
-      </button>
-
-      {open && (
-        <div
-          role="menu"
-          className="glass absolute right-0 top-11 w-52 overflow-hidden rounded-xl p-1 animate-[essemble-fade-in_150ms_var(--ease-out-soft)]"
-        >
-          <div className="px-3 py-2">
-            <p className="truncate text-sm text-text">{name}</p>
-          </div>
-          <div className="my-1 h-px bg-border" />
-          <Link
-            href="/bookings"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-            className="block rounded-lg px-3 py-2 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-text"
-          >
-            My bookings
-          </Link>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={onLogout}
-            className="block w-full rounded-lg px-3 py-2 text-left text-sm text-muted transition-colors hover:bg-surface-2 hover:text-text"
-          >
-            Sign out
-          </button>
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -305,27 +219,6 @@ function PinIcon() {
         strokeWidth="1.4"
       />
       <circle cx="8" cy="6.5" r="1.6" fill="currentColor" />
-    </svg>
-  );
-}
-
-function BellIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-[18px] w-[18px]" aria-hidden="true">
-      <path
-        d="M4 6.5a4 4 0 1 1 8 0c0 3 1 4 1 4H3s1-1 1-4z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M6.5 13a1.5 1.5 0 0 0 3 0"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
     </svg>
   );
 }

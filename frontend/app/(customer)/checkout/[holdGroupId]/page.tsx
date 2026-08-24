@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Countdown } from "@/components/ui/Countdown";
+import { PaymentModal } from "@/components/booking/PaymentModal";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
@@ -34,6 +35,7 @@ function Checkout({ holdGroupId }: { holdGroupId: string }) {
   const toast = useToast();
   const [expired, setExpired] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [paying, setPaying] = useState(false);
 
   /**
    * One key for this checkout, generated once and reused across retries.
@@ -80,17 +82,19 @@ function Checkout({ holdGroupId }: { holdGroupId: string }) {
       );
       router.replace(`/bookings/${booking.reference}`);
     } catch (caught) {
+      const { title, detail } = describeError(caught, "checkout");
+      toast.error(title, detail);
+
       if (isApiError(caught) && caught.code === "HOLD_EXPIRED") {
         // Not a failure to apologise for: the hold did its job and released
-        // the seats so someone else could have them.
+        // the seats so someone else could have them. Close the payment sheet
+        // and send them back to the map, which is the only useful next step.
         setExpired(true);
-        const { title, detail } = describeError(caught, "checkout");
-        toast.error(title, detail);
-      } else {
-        const { title, detail } = describeError(caught, "checkout");
-        toast.error(title, detail);
+        setPaying(false);
+        router.replace(`/shows/${hold.show_id}/seats`);
       }
       setConfirming(false);
+      throw caught;
     }
   }, [hold, expired, holdGroupId, toast, router]);
 
@@ -226,17 +230,28 @@ function Checkout({ holdGroupId }: { holdGroupId: string }) {
         size="lg"
         fullWidth
         className="mt-5"
-        loading={confirming}
+        loading={confirming && !paying}
         disabled={expired}
-        onClick={() => void confirm()}
+        onClick={() => setPaying(true)}
       >
-        {expired ? "Hold expired" : `Confirm booking · ${formatMoney(total)}`}
+        {expired ? "Hold expired" : `Proceed to payment · ${formatMoney(total)}`}
       </Button>
 
       <p className="mt-3 text-center text-[12px] text-muted">
-        Payment is mocked for this build — confirming books the seats
-        immediately.
+        Demo payment — no real transaction is processed.
       </p>
+
+      <PaymentModal
+        open={paying}
+        onClose={() => setPaying(false)}
+        total={total}
+        expiresAt={hold.expires_at}
+        expired={expired}
+        onExpire={() => setExpired(true)}
+        // The mock sheet gates nothing: this is the same confirm the page
+        // would have called on its own, with the same Idempotency-Key.
+        onPaid={confirm}
+      />
     </div>
   );
 }

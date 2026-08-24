@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -34,17 +35,49 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
+function isTabId(value: string | null): value is TabId {
+  return TABS.some((tab) => tab.id === value);
+}
+
 export default function ProfilePage() {
   return (
     <RequireAuth>
-      <Profile />
+      {/* useSearchParams needs a boundary or the whole route opts out of
+          static rendering. */}
+      <Suspense fallback={null}>
+        <Profile />
+      </Suspense>
     </RequireAuth>
   );
 }
 
 function Profile() {
-  const [tab, setTab] = useState<TabId>("upcoming");
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const requested = searchParams.get("tab");
+
+  const [tab, setTab] = useState<TabId>(
+    isTabId(requested) ? requested : "upcoming",
+  );
   const { user } = useAuth();
+
+  // Follow the URL when it changes under us -- the profile menu links
+  // between tabs while already on this page, and without this the panel
+  // would appear to do nothing.
+  useEffect(() => {
+    if (isTabId(requested) && requested !== tab) setTab(requested);
+    // Deliberately not depending on `tab`: this reacts to the URL, and
+    // including it would fight the click handler below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requested]);
+
+  /** Keep the URL shareable, without pushing a history entry per tab. */
+  const selectTab = (next: TabId) => {
+    setTab(next);
+    router.replace(next === "upcoming" ? "/profile" : `/profile?tab=${next}`, {
+      scroll: false,
+    });
+  };
 
   const bookingsQuery = useQuery({
     queryKey: ["bookings"],
@@ -89,7 +122,7 @@ function Profile() {
                   type="button"
                   role="tab"
                   aria-selected={active}
-                  onClick={() => setTab(item.id)}
+                  onClick={() => selectTab(item.id)}
                   className={cn(
                     "relative whitespace-nowrap px-4 py-3 text-sm transition-colors duration-150",
                     active ? "text-text" : "text-muted hover:text-text",

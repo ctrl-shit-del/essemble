@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import pathlib
 import sys
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
@@ -30,8 +31,13 @@ from decimal import Decimal
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select, text
-from sqlalchemy.ext.asyncio import AsyncSession
+# Run either as `python scripts/seed.py` or `python -m scripts.seed`. The
+# first form does not put the backend root on sys.path, so `app` would not
+# import -- and that is the form anyone types first.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+
+from sqlalchemy import func, select, text  # noqa: E402
+from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
 from app.core.config import settings
 from app.core.db import SessionFactory, engine

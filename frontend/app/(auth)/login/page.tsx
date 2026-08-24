@@ -22,6 +22,14 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // Same destination the submit handler will use, so switching to Register
+  // does not silently drop where the guard wanted to send them.
+  const rawNext = searchParams.get("next");
+  const safeNextHref =
+    rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//")
+      ? rawNext
+      : null;
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -115,7 +123,11 @@ function LoginForm() {
       <p className="mt-6 text-center text-[13px] text-muted">
         No account?{" "}
         <Link
-          href="/register"
+          href={
+            safeNextHref
+              ? `/register?next=${encodeURIComponent(safeNextHref)}`
+              : "/register"
+          }
           className="text-text underline decoration-border underline-offset-4 transition-colors hover:decoration-accent"
         >
           Create one

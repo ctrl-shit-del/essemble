@@ -116,7 +116,7 @@ See [`backend/.env.example`](backend/.env.example) for the full list with commen
 
 ## API
 
-Full interactive documentation at `<RENDER_URL>/docs` — 35 operations, tagged by domain.
+Full interactive documentation at `https://essemble-api.onrender.com/docs` — 35 operations, tagged by domain.
 
 ```
 Auth        POST /api/auth/register · POST /api/auth/login · GET /api/auth/me

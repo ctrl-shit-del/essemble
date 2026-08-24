@@ -6,11 +6,11 @@ import QRCode from "qrcode";
 /**
  * The ticket QR.
  *
- * The payload is `reference.qr_signature` -- exactly what the door scanner
- * expects, and exactly what the backend's check-in endpoint verifies. A raw
- * reference on its own is deliberately NOT enough to admit anyone: the
- * signature is an HMAC the server recomputes, which is why a screenshot of
- * the reference alone cannot become a ticket.
+ * Encodes a URL to /checkin/{reference}.{signature}, so a phone camera offers
+ * to open it rather than shrugging at a string it cannot use. The signed
+ * credential inside is what the backend verifies; a raw reference on its own
+ * is deliberately NOT enough to admit anyone, because the signature is an
+ * HMAC the server recomputes.
  *
  * Rendered client-side rather than fetched as an image, so the ticket appears
  * instantly from data already in hand and works with no further requests.
@@ -31,7 +31,14 @@ export function TicketQr({
     if (!signature || !canvasRef.current) return;
     let cancelled = false;
 
-    QRCode.toCanvas(canvasRef.current, `${reference}.${signature}`, {
+    // The SAME URL the backend encodes into the emailed ticket. Built from
+    // this page's own origin rather than a configured base, so it is correct
+    // by construction wherever the frontend is served from -- and the
+    // check-in endpoint accepts the bare credential too, so the two forms
+    // cannot drift into disagreeing about which ticket they mean.
+    const payload = `${window.location.origin}/checkin/${reference}.${signature}`;
+
+    QRCode.toCanvas(canvasRef.current, payload, {
       width: size,
       margin: 1,
       color: {

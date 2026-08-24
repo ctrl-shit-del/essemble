@@ -26,6 +26,7 @@ const VENUE_SECTIONS = [
   { href: "/admin", label: "Overview", exact: true },
   { href: "/admin/screens", label: "Screens & Layouts" },
   { href: "/admin/requests", label: "Slot Requests", badge: true },
+  { href: "/admin/scanner", label: "Scanner" },
   { href: "/admin/checkin", label: "Door Check-in" },
 ];
 

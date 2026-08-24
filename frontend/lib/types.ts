@@ -387,3 +387,18 @@ export const showDetailSchema = showSchema.extend({
   pricing: z.array(seatMapCategorySchema),
 });
 export type ShowDetail = z.infer<typeof showDetailSchema>;
+
+/* --------------------------------------------------------------- checkin */
+
+export const checkinResponseSchema = z.object({
+  result: z.string(),
+  reference: z.string(),
+  event_title: z.string(),
+  venue_name: z.string(),
+  screen_name: z.string(),
+  starts_at: z.string(),
+  customer_name: z.string(),
+  seats: z.array(z.string()),
+  checked_in_at: z.string(),
+});
+export type CheckinResponse = z.infer<typeof checkinResponseSchema>;

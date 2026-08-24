@@ -374,22 +374,57 @@ async def test_outbox_backoff_defers_a_freshly_failed_row(world, monkeypatch):
 # ---------------------------------------------------------------- QR
 
 
-async def test_qr_payload_round_trips(world):
+async def test_qr_payload_is_a_url_to_the_checkin_page(world):
+    """The QR encodes a URL, not bare text.
+
+    A phone camera reading `ESB-XXXXXX.abc123` finds nothing to do with it and
+    offers a web search. A URL it offers to open, which is the difference
+    between a scannable ticket and a decorative one.
+    """
+    from app.core.config import settings
+
     reference, _ = await book(world, "alice", world.seat_ids[7:8])
     signature = await scalar(
         "SELECT qr_signature FROM booking WHERE reference = :r", r=reference
     )
 
     payload = qr.build_payload(reference)
-    assert payload == f"{reference}.{signature}"
+    assert payload == f"{settings.app_base_url.rstrip('/')}/checkin/{reference}.{signature}"
     assert qr.verify_payload(payload) == reference
     assert len(qr.png_bytes(payload)) > 100
+
+
+async def test_qr_verification_accepts_the_bare_credential(world):
+    """Tickets issued before the URL change must keep working.
+
+    Their QR images already exist, printed or sitting in an inbox, and they
+    encode the bare `reference.signature`. Verification normalises both forms
+    to the same claim.
+    """
+    reference, _ = await book(world, "alice", world.seat_ids[16:17])
+    bare = qr.credential(reference)
+
+    assert "://" not in bare
+    assert qr.verify_payload(bare) == reference
+    # And the two forms carry the identical credential.
+    assert qr.build_payload(reference).endswith(bare)
+
+
+async def test_qr_verification_rejects_a_url_whose_credential_is_wrong():
+    """Wrapping a bad signature in a URL must not launder it."""
+    from app.core.config import settings
+
+    base = settings.app_base_url.rstrip("/")
+    assert qr.verify_payload(f"{base}/checkin/ESB-FAKE01.{'0' * 16}") is None
+    assert qr.verify_payload(f"{base}/checkin/") is None
+    assert qr.verify_payload(base) is None
 
 
 async def test_tampered_qr_fails_verification(world):
     reference, _ = await book(world, "alice", world.seat_ids[8:9])
     payload = qr.build_payload(reference)
-    signature = payload.split(".")[1]
+    # Split the credential, not the whole URL -- the host has dots of its own.
+    signature = qr.credential(reference).split(".")[1]
 
     assert qr.verify_payload(f"ESB-FAKE01.{signature}") is None
     assert qr.verify_payload(f"{reference}.{'0' * 16}") is None
@@ -438,6 +473,36 @@ async def test_checkin_valid_then_already_used(world):
     assert again.status_code == 409
     assert again.json()["error"]["code"] == "ALREADY_USED"
     assert again.json()["error"]["details"]["checked_in_at"][:19] == first_time[:19]
+
+
+async def test_checkin_accepts_the_url_payload_a_scanner_reads(world):
+    """A scanner posts what the QR contained, verbatim."""
+    reference, _ = await book(world, "alice", world.seat_ids[17:18])
+    payload = qr.build_payload(reference)
+    assert payload.startswith("http")
+
+    r = await world.client.post(
+        "/api/checkin/verify",
+        headers=world.auth("admin"),
+        json={"qr_payload": payload},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["result"] == "VALID"
+    assert r.json()["reference"] == reference
+
+
+async def test_checkin_accepts_the_bare_credential(world):
+    """The form every ticket issued before the URL change carries."""
+    reference, _ = await book(world, "alice", world.seat_ids[18:19])
+
+    r = await world.client.post(
+        "/api/checkin/verify",
+        headers=world.auth("admin"),
+        json={"qr_payload": qr.credential(reference)},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["result"] == "VALID"
+    assert r.json()["reference"] == reference
 
 
 async def test_checkin_rejects_a_tampered_payload(world):

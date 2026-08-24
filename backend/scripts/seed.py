@@ -296,6 +296,44 @@ def at(day: date, hour: int, minute: int = 0) -> datetime:
     )
 
 
+def next_slot(
+    today: date,
+    day_offset: int,
+    hour: int,
+    minute: int = 0,
+    *,
+    min_lead: timedelta = timedelta(minutes=30),
+) -> datetime:
+    """The NEXT occurrence of a wall-clock slot, at least `min_lead` away.
+
+    Demo targets are labelled by what they are for -- "tonight's show", "the
+    cancellable booking" -- and a label that points at something already
+    expired is worse than no label at all. Anchoring unconditionally to
+    `today + day_offset` did exactly that: seeding after 19:30 IST produced a
+    "tonight's show" that had already started, and holds on it were refused.
+
+    So the slot rolls forward a day at a time until it is genuinely usable.
+    This keeps the date-anchoring the seed's idempotency depends on -- the
+    result is still a fixed wall-clock time on a specific date, so the
+    (event, screen, starts_at) key is stable and a second run inside the same
+    window creates nothing. It only stops the anchor landing in the past.
+
+    `min_lead` is per target: a show merely needs to be bookable, but the
+    cancellable booking has to sit outside the cancellation cutoff or the
+    thing it demonstrates is refused.
+    """
+    candidate = at(today + timedelta(days=day_offset), hour, minute)
+    now = datetime.now(timezone.utc)
+    while candidate - now < min_lead:
+        candidate += timedelta(days=1)
+    return candidate
+
+
+#: Comfortably outside settings.cancellation_cutoff_minutes, so the booking
+#: labelled "cancellable" can actually be cancelled during a demo.
+CANCELLABLE_LEAD = timedelta(minutes=settings.cancellation_cutoff_minutes + 120)
+
+
 async def get_or_create_user(
     session: AsyncSession, summary: Summary, email: str, name: str, role: UserRole
 ) -> UserAccount:
@@ -724,14 +762,19 @@ async def seed(session: AsyncSession) -> Summary:
             )
         )
 
-    # --- demo target 1: a show TODAY in the evening -----------------------
+    # --- demo target 1: the next evening show -----------------------------
+    #
+    # Tonight when the seed runs early enough, tomorrow when it does not.
+    # Either way it is bookable the moment the seed finishes.
+    tonight_at = next_slot(today, 0, 19, 30)
     tonight = await get_or_create_show(
         session, summary, organiser, events["nebula-drift"], audi1,
-        at(today, 19, 30), "English", ShowFormat.IMAX, PRICING,
+        tonight_at, "English", ShowFormat.IMAX, PRICING,
     )
-    summary.targets["tonight's show (booking demo)"] = (
+    summary.targets["evening show (booking demo)"] = (
         f"show_id={tonight.id}  Nebula Drift  {LARGE_12x18.name}  "
-        f"{at(today, 19, 30).astimezone(IST):%d %b %H:%M} IST"
+        f"{tonight_at.astimezone(IST):%a %d %b %H:%M} IST  "
+        f"({tonight_at.isoformat()})"
     )
 
     # --- demo target 2: one seat from sold out ----------------------------
@@ -739,9 +782,10 @@ async def seed(session: AsyncSession) -> Summary:
     # The VIP category on Audi 2 is the smallest in the building, so filling
     # it leaves a genuinely sold-out category to waitlist against without
     # writing hundreds of rows.
+    near_at = next_slot(today, 2, 20, 0)
     near = await get_or_create_show(
         session, summary, organiser, events["quantum-hour"], audi2,
-        at(today + timedelta(days=2), 20, 0), "English", ShowFormat.TWO_D, PRICING,
+        near_at, "English", ShowFormat.TWO_D, PRICING,
     )
     vip = (await categories_of(session, audi2.id))["VIP"]
     vip_seats = await seats_in_category(session, audi2.id, vip.id)
@@ -756,13 +800,15 @@ async def seed(session: AsyncSession) -> Summary:
     summary.targets["near-sold-out (waitlist demo)"] = (
         f"show_id={near.id}  category_id={vip.id} (VIP)  "
         f"{len(vip_seats) - 1}/{len(vip_seats)} sold, "
-        f"seat {remaining.row_label}{remaining.seat_number} left"
+        f"seat {remaining.row_label}{remaining.seat_number} left  "
+        f"{near_at.astimezone(IST):%a %d %b %H:%M} IST  ({near_at.isoformat()})"
     )
 
     # --- demo target 3: a comfortably cancellable booking -----------------
+    far_at = next_slot(today, 6, 18, 30, min_lead=CANCELLABLE_LEAD)
     far = await get_or_create_show(
         session, summary, organiser, events["long-monsoon"], audi1,
-        at(today + timedelta(days=6), 18, 30), "Tamil", ShowFormat.TWO_D, PRICING,
+        far_at, "Tamil", ShowFormat.TWO_D, PRICING,
     )
     premium_far = (await categories_of(session, audi1.id))["Premium"]
     far_seats = await seats_in_category(session, audi1.id, premium_far.id)
@@ -773,7 +819,8 @@ async def seed(session: AsyncSession) -> Summary:
     if cancellable is not None:
         summary.targets["cancellable booking"] = (
             f"reference={cancellable.reference}  show_id={far.id}  "
-            f"owner=regular@essemble.dev  starts in 6 days"
+            f"owner=regular@essemble.dev  "
+            f"{far_at.astimezone(IST):%a %d %b %H:%M} IST  ({far_at.isoformat()})"
         )
     else:
         existing = await session.scalar(
@@ -784,7 +831,8 @@ async def seed(session: AsyncSession) -> Summary:
         if existing is not None:
             summary.targets["cancellable booking"] = (
                 f"reference={existing.reference}  show_id={far.id}  "
-                f"owner=regular@essemble.dev  starts in 6 days"
+                f"owner=regular@essemble.dev  "
+                f"{far_at.astimezone(IST):%a %d %b %H:%M} IST  ({far_at.isoformat()})"
             )
 
     # --- history for regular@essemble.dev ---------------------------------
@@ -839,8 +887,8 @@ async def seed(session: AsyncSession) -> Summary:
             venue_id=luxe.id,
             screen_id=luxe1.id,
             event_id=events["carnatic-electric"].id,
-            starts_at=at(today + timedelta(days=10), 19, 0),
-            ends_at=at(today + timedelta(days=12), 22, 0),
+            starts_at=next_slot(today, 10, 19, 0),
+            ends_at=next_slot(today, 12, 22, 0),
             shows_per_day=1,
             language="Tamil",
             format=None,

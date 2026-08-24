@@ -59,6 +59,15 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://essemble:essemble@localhost:5432/essemble",
         description="Async SQLAlchemy DSN. Must use the asyncpg driver.",
     )
+    #: Separate database for the test suite. The suite TRUNCATEs every
+    #: application table at session start, so it must never be pointed at a
+    #: database anything else is using -- a deployed instance runs a sweeper
+    #: and an outbox dispatcher permanently, and those two workers racing a
+    #: truncating test suite make every run flaky in both directions: the
+    #: workers mutate rows mid-test, and the suite deletes the deployment's
+    #: data. tests/conftest.py refuses to start without this set to a
+    #: different endpoint from DATABASE_URL.
+    test_database_url: str | None = None
     db_echo: bool = False
     #: Open and close a connection per use instead of pooling. The test suite
     #: sets this: pytest-asyncio gives each test its own event loop, and a
@@ -138,16 +147,22 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
-    @field_validator("database_url")
+    @field_validator("database_url", "test_database_url")
     @classmethod
-    def _normalise_dsn(cls, value: str) -> str:
+    def _normalise_dsn(cls, value: str | None) -> str | None:
         """Accept a libpq DSN and hand back one asyncpg can actually open.
 
         Managed providers give out `postgresql://...?sslmode=require&channel
         _binding=...`. asyncpg understands neither the bare scheme (SQLAlchemy
         would pick psycopg2) nor libpq-only query parameters, so translate
         rather than making every deployment edit the string by hand.
+
+        Applied to the test DSN as well: a pooled test database would break
+        the LISTEN/NOTIFY tests specifically, and they are the ones whose
+        failure is least obviously a configuration problem.
         """
+        if value is None:
+            return None
         parts = urlsplit(value)
 
         # Refuse a pooled endpoint outright. Correcting it here would be worse

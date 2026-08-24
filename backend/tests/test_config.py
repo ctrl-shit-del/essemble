@@ -9,6 +9,7 @@ import pathlib
 import re
 
 import pytest
+from dotenv import dotenv_values
 
 from app.core.config import Settings
 from app.main import app
@@ -194,3 +195,161 @@ async def test_health_detail_reports_a_worker_that_has_run(world):
     assert after is not None
     if before is not None:
         assert after >= before
+
+
+# ------------------------------------------------------------------- CORS
+
+
+def test_cors_origins_parses_a_comma_separated_list():
+    """pydantic-settings would otherwise JSON-decode a list-typed setting.
+
+    `CORS_ORIGINS=http://a,http://b` is not JSON, so without NoDecode plus the
+    validator this raises during settings construction -- at import time, with
+    no route to catch it.
+    """
+    parsed = Settings(cors_origins="http://localhost:3000, https://x.vercel.app ,")
+    assert parsed.cors_origins == ["http://localhost:3000", "https://x.vercel.app"]
+
+
+def test_cors_origins_reads_a_comma_separated_environment_variable(monkeypatch):
+    """The constructor and the environment take different code paths."""
+    monkeypatch.setenv("CORS_ORIGINS", "http://localhost:3000,https://x.vercel.app")
+    assert Settings().cors_origins == [
+        "http://localhost:3000",
+        "https://x.vercel.app",
+    ]
+
+
+def test_cors_origins_defaults_to_the_local_frontend():
+    assert Settings().cors_origins == ["http://localhost:3000"]
+
+
+def test_cors_is_never_configured_as_a_credentialed_wildcard():
+    """A wildcard would break CORS here, not loosen it.
+
+    The API sends allow_credentials=True, and a browser refuses
+    `Access-Control-Allow-Origin: *` on a credentialed request. A "*" in the
+    configured origins is therefore a misconfiguration that fails only in the
+    browser, which is the worst place to find it.
+    """
+    from app.main import app
+    from starlette.middleware.cors import CORSMiddleware
+
+    cors = [m for m in app.user_middleware if m.cls is CORSMiddleware]
+    assert len(cors) == 1, "CORS middleware is not installed exactly once"
+
+    options = cors[0].kwargs
+    assert options["allow_credentials"] is True
+    assert "*" not in options["allow_origins"], (
+        "allow_origins=['*'] is incompatible with allow_credentials=True"
+    )
+    assert options["allow_origins"], "no origins configured"
+
+
+@session_loop
+async def test_preflight_and_actual_request_carry_cors_headers(world):
+    """End to end: what a browser actually sees."""
+    origin = Settings().cors_origins[0]
+
+    preflight = await world.client.options(
+        "/api/holds",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+    assert preflight.status_code in (200, 204), preflight.text
+    assert preflight.headers["access-control-allow-origin"] == origin
+    assert preflight.headers["access-control-allow-credentials"] == "true"
+
+    actual = await world.client.get(
+        f"/api/shows/{world.show_id}/seatmap", headers={"Origin": origin}
+    )
+    assert actual.status_code == 200
+    assert actual.headers["access-control-allow-origin"] == origin
+
+
+def test_an_unlisted_origin_is_not_echoed_back():
+    """The allowlist has to actually exclude something."""
+    from starlette.middleware.cors import CORSMiddleware
+
+    from app.main import app
+
+    options = [m for m in app.user_middleware if m.cls is CORSMiddleware][0].kwargs
+    assert "https://not-our-frontend.example" not in options["allow_origins"]
+
+
+# ------------------------------------------------------- deployment files
+
+
+def test_uvicorn_is_declared_as_a_dependency():
+    """The server the deployment runs must be installed by the deployment."""
+    requirements = pathlib.Path("requirements.txt").read_text()
+    assert "uvicorn" in requirements
+
+
+def test_runtime_txt_pins_an_interpreter():
+    """.python-version is not honoured by every host; runtime.txt is."""
+    runtime = pathlib.Path("runtime.txt").read_text().strip()
+    assert re.fullmatch(r"python-3\.\d+\.\d+", runtime), runtime
+
+
+def test_the_start_command_binds_all_interfaces_on_the_assigned_port():
+    """Binding loopback, or a hardcoded port, makes the service unroutable.
+
+    Neither failure shows up in the application log -- the process starts
+    happily and the platform's health check simply never connects.
+    """
+    for path in ("Procfile", "scripts/start.sh"):
+        # Executable lines only: the comments in these files discuss the very
+        # mistakes being asserted against.
+        command = " ".join(
+            line
+            for line in pathlib.Path(path).read_text().splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        )
+        assert "0.0.0.0" in command, f"{path} does not bind 0.0.0.0"
+        assert "127.0.0.1" not in command, f"{path} binds loopback"
+        assert "localhost" not in command, f"{path} binds localhost"
+        assert "PORT" in command, f"{path} does not use $PORT"
+        assert not re.search(r"--port\s+\d+", command), f"{path} hardcodes a port"
+
+
+# -------------------------------------------------------- test isolation
+
+
+def test_the_suite_is_not_running_against_the_application_database():
+    """A standing assertion, not a one-off check.
+
+    conftest refuses to start when the two DSNs match, but that guard reads
+    the environment. This reads the Settings the app actually built, so it
+    also catches the case where something re-pointed the engine after the
+    bootstrap ran.
+    """
+    from app.core.config import settings
+
+    env = dotenv_values(".env")
+    app_dsn = (env.get("DATABASE_URL") or "").strip()
+    if not app_dsn:
+        pytest.skip("no DATABASE_URL in .env to compare against")
+
+    from tests.conftest import _endpoint
+
+    assert _endpoint(settings.database_url) != _endpoint(app_dsn), (
+        "the suite is pointed at the application database and would truncate it"
+    )
+
+
+def test_the_test_database_is_a_direct_endpoint():
+    """LISTEN/NOTIFY does not survive transaction pooling.
+
+    A pooled test DSN would fail the SSE tests specifically, and it would
+    look like a bug in the broker rather than a configuration mistake.
+    """
+    from app.core.config import settings
+
+    assert not settings.db_is_pooled, (
+        f"the test database is a pooled endpoint ({settings.db_host}); "
+        "the SSE tests need LISTEN/NOTIFY"
+    )

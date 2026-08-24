@@ -1,9 +1,14 @@
 """Shared fixtures.
 
-These tests run against the real database named by DATABASE_URL. The booking
-engine's correctness is a property of PostgreSQL's partial unique index and its
-handling of ON CONFLICT, so testing it against anything else would be testing
-something other than the thing being graded.
+These tests run against a real PostgreSQL database, named by
+TEST_DATABASE_URL. The booking engine's correctness is a property of
+PostgreSQL's partial unique index and its handling of ON CONFLICT, so testing
+it against anything else would be testing something other than the thing being
+graded.
+
+That database must be its OWN -- normally a Neon branch of the development
+one, never the database an app instance is pointed at. See the bootstrap
+block below for why; it refuses to run otherwise.
 
 Two things keep the suite fast against a remote database:
 
@@ -24,17 +29,83 @@ than a transaction rolled back at the end: an uncommitted transaction is
 invisible to those helpers.
 """
 
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
 import pytest_asyncio
+from dotenv import dotenv_values
 from sqlalchemy import text
 
-from app.core.db import engine
-from app.core.security import hash_password
-from app.main import app
+
+# --------------------------------------------------------------------------
+# TEST DATABASE BOOTSTRAP
+#
+# This block MUST run before the first `app.` import below. app.core.config
+# builds Settings at import time and lru_caches it, and app.core.db builds the
+# engine from that -- by the time a fixture runs, the connection target is
+# already fixed.
+#
+# The suite TRUNCATEs every application table at session start. A deployed
+# instance runs a sweeper and an outbox dispatcher against its database
+# permanently. Sharing one database between the two is not merely untidy, it
+# is mutually destructive: the workers rewrite rows underneath a running
+# assertion, and the suite deletes the deployment's data every run. So the
+# suite refuses to start rather than guess.
+# --------------------------------------------------------------------------
+
+
+def _endpoint(dsn: str) -> tuple[str, str]:
+    """(host, database) identifying the server, ignoring credentials.
+
+    The '-pooler' suffix is stripped for comparison only: a pooled and a
+    direct DSN name the SAME database, and treating them as different is
+    exactly the mistake this guard exists to catch.
+    """
+    parts = urlsplit(dsn)
+    host = (parts.hostname or "").lower().replace("-pooler", "")
+    return host, parts.path.lstrip("/")
+
+
+def _resolve_test_database() -> str:
+    # Real environment wins over .env, matching pydantic-settings' precedence.
+    env = {**dotenv_values(".env"), **os.environ}
+    test_dsn = (env.get("TEST_DATABASE_URL") or "").strip()
+    app_dsn = (env.get("DATABASE_URL") or "").strip()
+
+    if not test_dsn:
+        raise RuntimeError(
+            "TEST_DATABASE_URL is not set."
+            "\n\n"
+            "The test suite truncates every application table, so it needs a"
+            " database of its own -- normally a branch of the development one."
+            " Running it against DATABASE_URL would wipe that database, and"
+            " would race any app instance pointed at it."
+            "\n\n"
+            "Set TEST_DATABASE_URL in .env. See .env.example."
+        )
+
+    if app_dsn and _endpoint(test_dsn) == _endpoint(app_dsn):
+        host, database = _endpoint(test_dsn)
+        raise RuntimeError(
+            "TEST_DATABASE_URL and DATABASE_URL name the same database"
+            f" ({database} on {host})."
+            "\n\n"
+            "Refusing to run: this suite would truncate it. Point"
+            " TEST_DATABASE_URL at a separate database or Neon branch."
+        )
+
+    return test_dsn
+
+
+os.environ["DATABASE_URL"] = _resolve_test_database()
+
+from app.core.db import engine  # noqa: E402
+from app.core.security import hash_password  # noqa: E402
+from app.main import app  # noqa: E402
 
 #: Everything a test can dirty. Rebuilt per test; one statement.
 MUTABLE_TABLES = (
@@ -73,6 +144,17 @@ class World:
 
     def auth(self, who: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.tokens[who]}"}
+
+
+def pytest_report_header() -> str:
+    """Name the database in the run header.
+
+    The suite is destructive; which database it is about to truncate should
+    never have to be inferred.
+    """
+    from app.core.config import settings
+
+    return f"essemble: truncating test database at {settings.db_host}"
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")

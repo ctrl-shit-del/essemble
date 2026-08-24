@@ -6,10 +6,10 @@ A full-stack ticket-booking platform for movies and live events. Customers book 
 
 | | |
 |---|---|
-| **Live app** | `https://essemble-murex.vercel.app/` |
-| **API** | `https://essemble-api.onrender.com/` |
-| **API docs** | `https://essemble-api.onrender.com//docs` |
-| **Design write-up** | [`docs/SYSTEM_DESIGN.md`](docs/SYSTEM_DESIGN.md) |
+| **Live app** | [https://essemble-murex.vercel.app/](https://essemble-murex.vercel.app/) |
+| **API** | [https://essemble-api.onrender.com/](https://essemble-api.onrender.com/) |
+| **API docs** | [https://essemble-api.onrender.com/docs](https://essemble-api.onrender.com/docs) |
+| **Design write-up** | [docs/SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md) |
 
 > The API is hosted on Render's free tier and sleeps after 15 minutes of inactivity. **The first request can take up to 60 seconds** while the instance wakes; the frontend shows a "waking the server" state during this. Subsequent requests are immediate.
 
